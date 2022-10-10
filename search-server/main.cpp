@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <stdexcept>
 #include <set>
 #include <string>
@@ -68,6 +69,20 @@ struct Document
 	return words;
 }
 
+template <typename StringContainer>
+	[[nodiscard]] set<string> MakeUniqueNonEmptyStrings(const StringContainer& strings)
+	{
+		set<string> non_empty_strings;
+		for (const string& str : strings)
+		{
+			if (!str.empty())
+			{
+				non_empty_strings.insert(str);
+			}
+		}
+		return non_empty_strings;
+	}
+
 enum class DocumentStatus
 {
 	ACTUAL,
@@ -83,6 +98,13 @@ public:
 	explicit SearchServer(const StringContainer& stop_words)
 		:stop_words_(MakeUniqueNonEmptyStrings(stop_words))
 	{
+		for (const string& stop_word : stop_words_)
+		{
+			if (!IsValidWord(stop_word))
+			{
+				throw invalid_argument("Error while parsing stop words");
+			}
+		}
 	}
 
 	explicit SearchServer(const string& stop_words_text)
@@ -113,10 +135,6 @@ public:
 	vector<Document> FindTopDocuments(const string& raw_query,
 		DocumentPredicate document_predicate) const
 	{
-		if (!IsValidWord(raw_query))
-		{
-			throw invalid_argument("Invalid query to find documents");
-		}
 		const Query query = ParseQuery(raw_query);
 
 		vector<Document> topDocuments = FindAllDocuments(query, document_predicate);
@@ -157,9 +175,9 @@ public:
 
 	[[nodiscard]] tuple<vector<string>, DocumentStatus> MatchDocument(const string& raw_query, const int document_id) const
 	{
-		if (!IsValidWord(raw_query) || document_id < 0)
+		if (document_id < 0)
 		{
-			throw invalid_argument("Invalid query or doc_id for matching document");
+			throw invalid_argument("Invalid doc_id for matching document");
 		}
 		const Query query = ParseQuery(raw_query);
 
@@ -187,8 +205,8 @@ public:
 				break;
 			}
 		}
-		tuple<vector<string>, DocumentStatus> matched_docs = { matched_words, documents_.at(document_id).status };
-		return matched_docs;
+
+		return { matched_words, documents_.at(document_id).status };
 	}
 
 	[[nodiscard]] int GetDocumentId(const int index) const
@@ -220,7 +238,7 @@ private:
 		set<string> minus_words;
 	};
 
-	set<string> stop_words_;
+	const set<string> stop_words_;
 	map<string, map<int, double>> word_to_document_freqs_;
 	map<int, DocumentData> documents_;
 	vector<int> document_ids_;
@@ -253,35 +271,14 @@ private:
 			});
 	}
 
-	template <typename StringContainer>
-	[[nodiscard]] static set<string> MakeUniqueNonEmptyStrings(const StringContainer& strings)
-	{
-		set<string> non_empty_strings;
-		for (const string& str : strings)
-		{
-			if (!IsValidWord(str))
-			{
-				throw invalid_argument("Error while parsing stop words");
-			}
-			if (!str.empty())
-			{
-				non_empty_strings.insert(str);
-			}
-		}
-		return non_empty_strings;
-	}
-
 	[[nodiscard]] static int ComputeAverageRating(const vector<int>& ratings)
 	{
 		if (ratings.empty())
 		{
 			return 0;
 		}
-		int rating_sum = 0;
-		for (const int rating : ratings)
-		{
-			rating_sum += rating;
-		}
+		int rating_sum = accumulate(ratings.begin(), ratings.end(), 0);
+
 		return rating_sum / static_cast<int>(ratings.size());
 	}
 
