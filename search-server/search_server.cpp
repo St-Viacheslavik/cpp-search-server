@@ -5,6 +5,9 @@
 #include "string_processing.h"
 #include "search_server.h"
 
+//must be global variable
+const std::map<std::string, double> empty_map = {};
+
 SearchServer::SearchServer(const std::string& stop_words_text)
 	:SearchServer(SplitIntoWords(stop_words_text))
 { }
@@ -17,14 +20,17 @@ void SearchServer::AddDocument(int document_id, const std::string& document,
 		throw std::invalid_argument("Error while adding document");
 	}
 
+	std::map<std::string, double> document_to_word_freqs;
+
 	const std::vector<std::string> words = SplitIntoWordsNoStop(document);
 	const double inv_word_count = 1.0 / static_cast<double>(words.size());
 	for (const std::string& word : words)
 	{
 		word_to_document_freqs_[word][document_id] += inv_word_count;
+		document_to_word_freqs[word] += inv_word_count;
 	}
-	documents_.emplace(document_id, DocumentData{ ComputeAverageRating(ratings), status });
-	document_ids_.push_back(document_id);
+	documents_.emplace(document_id, DocumentData{ ComputeAverageRating(ratings), status, document_to_word_freqs });
+	document_ids_.insert(document_id);
 }
 
 [[nodiscard]] std::vector<Document> SearchServer::FindTopDocuments(const std::string& raw_query, const DocumentStatus status) const
@@ -82,14 +88,39 @@ void SearchServer::AddDocument(int document_id, const std::string& document,
 	return { matched_words, documents_.at(document_id).status };
 }
 
-[[nodiscard]] int SearchServer::GetDocumentId(const int index) const
+[[nodiscard]] std::set<int>::const_iterator SearchServer::begin() const
 {
-	if (documents_.count(index) <= 0)
-	{
-		throw std::out_of_range("Error while get document ID by index");
-	}
-	return document_ids_[index];
+	return document_ids_.begin();
 }
+
+[[nodiscard]] std::set<int>::const_iterator SearchServer::end() const
+{
+	return document_ids_.end();
+}
+
+[[nodiscard]] const std::map<std::string, double>& SearchServer::GetWordFrequencies(int document_id) const
+{
+	
+	if (documents_.count(document_id) == 0)
+	{
+		return empty_map;
+	}
+	return documents_.at(document_id).document_to_word_freqs;
+}
+
+void SearchServer::RemoveDocument(int document_id)
+{
+	const auto it = documents_.find(document_id);
+	if (it == documents_.end()) return;
+
+	for (const auto& [word, freq] : it->second.document_to_word_freqs)
+	{
+		word_to_document_freqs_.at(word).erase(document_id);
+	}
+	documents_.erase(document_id);
+	document_ids_.erase(document_id);
+}
+
 
 [[nodiscard]] bool SearchServer::IsStopWord(const std::string& word) const
 {
@@ -125,7 +156,7 @@ void SearchServer::AddDocument(int document_id, const std::string& document,
 	{
 		return 0;
 	}
-	int rating_sum = accumulate(ratings.begin(), ratings.end(), 0);
+	const int rating_sum = accumulate(ratings.begin(), ratings.end(), 0);
 
 	return rating_sum / static_cast<int>(ratings.size());
 }
