@@ -1,47 +1,42 @@
 #include "request_queue.h"
 
-RequestQueue::RequestQueue(const SearchServer& search_server)
-	: search_server_(search_server)
-	, no_results_requests_(0)
-	, current_time_(0)
-{}
-
-std::vector<Document> RequestQueue::AddFindRequest(const std::string& raw_query, DocumentStatus status)
+using namespace std;
+RequestQueue::RequestQueue(const SearchServer &search_server) : search_server_(search_server)
 {
-	return AddFindRequest(raw_query,
-		[status](int document_id, const DocumentStatus document_status, int rating)
-		{
-			return document_status == status;
-		});
 }
 
-std::vector<Document> RequestQueue::AddFindRequest(const std::string& raw_query)
+vector<Document> RequestQueue::AddFindRequest(const string &raw_query, DocumentStatus status)
 {
-	return AddFindRequest(raw_query, DocumentStatus::ACTUAL);
+    const auto search_results = search_server_.FindTopDocuments(raw_query, status);
+    AddRequest(search_results, raw_query);
+    return search_results;
+}
+
+vector<Document> RequestQueue::AddFindRequest(const string &raw_query)
+{
+    const auto search_results = search_server_.FindTopDocuments(raw_query);
+    AddRequest(search_results, raw_query);
+    return search_results;
 }
 
 int RequestQueue::GetNoResultRequests() const
 {
-	return no_results_requests_;
+    return count_if(requests_.begin(), requests_.end(), [](QueryResult lhs)
+                    { return lhs.result == false; });
 }
 
-void RequestQueue::AddRequest(const int results_num)
+void RequestQueue::AddRequest(const vector<Document>& search_results, const string &raw_query)
 {
-	// новый запрос - новая секунда
-	++current_time_;
-	// удаляем все результаты поиска, которые устарели
-	while (!requests_.empty() && min_in_day_ <= current_time_ - requests_.front().timestamp)
-	{
-		if (requests_.front().results == 0)
-		{
-			--no_results_requests_;
-		}
-		requests_.pop_front();
-	}
-	// сохраняем новый результат поиска
-	requests_.push_back({ current_time_, results_num });
-	if (results_num == 0)
-	{
-		++no_results_requests_;
-	}
+    if (requests_.size() >= min_in_day)
+    {
+        requests_.pop_front();
+    }
+    if (search_results.empty())
+    {
+        requests_.push_back({raw_query, false});
+    }
+    else
+    {
+        requests_.push_back({raw_query, true});
+    }
 }
